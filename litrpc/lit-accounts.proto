@@ -162,6 +162,9 @@ message UpdateAccountRequest {
     must be used instead.
     */
     string label = 4;
+
+    // An optional new label to set for the account.
+    string new_label = 5;
 }
 
 message CreditAccountRequest {

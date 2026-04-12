@@ -376,7 +376,9 @@ type UpdateAccountRequest struct {
 	ExpirationDate int64 `protobuf:"varint,3,opt,name=expiration_date,json=expirationDate,proto3" json:"expiration_date,omitempty"`
 	// The label of the account to update. If an account has no label, then the ID
 	// must be used instead.
-	Label         string `protobuf:"bytes,4,opt,name=label,proto3" json:"label,omitempty"`
+	Label string `protobuf:"bytes,4,opt,name=label,proto3" json:"label,omitempty"`
+	// An optional new label to set for the account.
+	NewLabel      string `protobuf:"bytes,5,opt,name=new_label,json=newLabel,proto3" json:"new_label,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -436,6 +438,13 @@ func (x *UpdateAccountRequest) GetExpirationDate() int64 {
 func (x *UpdateAccountRequest) GetLabel() string {
 	if x != nil {
 		return x.Label
+	}
+	return ""
+}
+
+func (x *UpdateAccountRequest) GetNewLabel() string {
+	if x != nil {
+		return x.NewLabel
 	}
 	return ""
 }

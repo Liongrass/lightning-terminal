@@ -208,6 +208,20 @@ func (s *BoltStore) UpdateAccountBalanceAndExpiry(_ context.Context,
 	return s.updateAccount(id, update)
 }
 
+// UpdateAccountLabel updates the label of an account.
+//
+// NOTE: This is part of the Store interface.
+func (s *BoltStore) UpdateAccountLabel(_ context.Context, id AccountID,
+	label string) error {
+
+	update := func(account *OffChainBalanceAccount) error {
+		account.Label = label
+		return nil
+	}
+
+	return s.updateAccount(id, update)
+}
+
 // AddAccountInvoice adds an invoice hash to the account with the given ID.
 //
 // NOTE: This is part of the Store interface.

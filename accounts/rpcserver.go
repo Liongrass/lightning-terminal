@@ -133,7 +133,7 @@ func (s *RPCServer) UpdateAccount(ctx context.Context,
 	// Ask the service to update the account.
 	account, err := s.service.UpdateAccount(
 		ctx, accountID, btcutil.Amount(req.AccountBalance),
-		req.ExpirationDate,
+		req.ExpirationDate, req.NewLabel,
 	)
 	if err != nil {
 		return nil, err

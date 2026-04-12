@@ -174,6 +174,10 @@ var updateAccountCommand = cli.Command{
 				"0 means it does not expire.",
 			Value: -1,
 		},
+		cli.StringFlag{
+			Name:  "new_label",
+			Usage: "A new label to set for the account.",
+		},
 	},
 	Action: updateAccount,
 	Subcommands: []cli.Command{
@@ -229,6 +233,7 @@ func updateAccount(cli *cli.Context) error {
 		Label:          label,
 		AccountBalance: newBalance,
 		ExpirationDate: expirationDate,
+		NewLabel:       cli.String("new_label"),
 	}
 	resp, err := client.UpdateAccount(ctx, req)
 	if err != nil {

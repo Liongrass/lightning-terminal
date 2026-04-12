@@ -48,6 +48,7 @@ type SQLQueries interface {
 	SetAccountIndex(ctx context.Context, arg sqlc.SetAccountIndexParams) error
 	UpdateAccountBalance(ctx context.Context, arg sqlc.UpdateAccountBalanceParams) (int64, error)
 	UpdateAccountExpiry(ctx context.Context, arg sqlc.UpdateAccountExpiryParams) (int64, error)
+	UpdateAccountLabel(ctx context.Context, arg sqlc.UpdateAccountLabelParams) (int64, error)
 	UpdateAccountLastUpdate(ctx context.Context, arg sqlc.UpdateAccountLastUpdateParams) (int64, error)
 	// UpdateAccountAliasForTests is a query intended only for testing
 	// purposes, to change the account alias.
@@ -375,6 +376,36 @@ func (s *SQLStore) UpdateAccountBalanceAndExpiry(ctx context.Context,
 				},
 			)
 		})
+		if err != nil {
+			return err
+		}
+
+		return s.markAccountUpdated(ctx, db, id)
+	})
+}
+
+// UpdateAccountLabel updates the label of an account.
+//
+// NOTE: This is part of the Store interface.
+func (s *SQLStore) UpdateAccountLabel(ctx context.Context, alias AccountID,
+	label string) error {
+
+	var writeTxOpts db.QueriesTxOptions
+	return s.db.ExecTx(ctx, &writeTxOpts, func(db SQLQueries) error {
+		id, err := getAccountIDByAlias(ctx, db, alias)
+		if err != nil {
+			return err
+		}
+
+		_, err = db.UpdateAccountLabel(
+			ctx, sqlc.UpdateAccountLabelParams{
+				ID: id,
+				Label: sql.NullString{
+					String: label,
+					Valid:  label != "",
+				},
+			},
+		)
 		if err != nil {
 			return err
 		}

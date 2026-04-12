@@ -301,7 +301,7 @@ func (s *InterceptorService) NewAccount(ctx context.Context,
 // if it exists.
 func (s *InterceptorService) UpdateAccount(ctx context.Context,
 	accountID AccountID, accountBalance btcutil.Amount,
-	expirationDate int64) (*OffChainBalanceAccount, error) {
+	expirationDate int64, newLabel string) (*OffChainBalanceAccount, error) {
 
 	s.Lock()
 	defer s.Unlock()
@@ -340,6 +340,14 @@ func (s *InterceptorService) UpdateAccount(ctx context.Context,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("unable to update account: %w", err)
+	}
+
+	if newLabel != "" {
+		err = s.store.UpdateAccountLabel(ctx, accountID, newLabel)
+		if err != nil {
+			return nil, fmt.Errorf("unable to update account "+
+				"label: %w", err)
+		}
 	}
 
 	return s.store.Account(ctx, accountID)

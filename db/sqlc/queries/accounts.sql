@@ -15,6 +15,12 @@ SET expiration = $1
 WHERE id = $2
 RETURNING id;
 
+-- name: UpdateAccountLabel :one
+UPDATE accounts
+SET label = $1
+WHERE id = $2
+RETURNING id;
+
 -- name: UpdateAccountLastUpdate :one
 UPDATE accounts
 SET last_updated = $1

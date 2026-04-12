@@ -248,6 +248,10 @@ type Store interface {
 		newBalance fn.Option[int64],
 		newExpiry fn.Option[time.Time]) error
 
+	// UpdateAccountLabel updates the label of an account.
+	UpdateAccountLabel(ctx context.Context, id AccountID,
+		label string) error
+
 	// AddAccountInvoice adds an invoice hash to an account.
 	AddAccountInvoice(ctx context.Context, id AccountID,
 		hash lntypes.Hash) error
