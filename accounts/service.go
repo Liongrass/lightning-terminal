@@ -94,6 +94,12 @@ type InterceptorService struct {
 	// single account payment may have. See Config.MaxPaymentSizeMsat.
 	maxPaymentSize lnwire.MilliSatoshi
 
+	// dropStreamMessages, when set, indicates that lnd supports dropping
+	// individual messages of server-streaming RPCs in its RPC middleware.
+	// This is required to filter streams like SubscribeInvoices per
+	// account.
+	dropStreamMessages bool
+
 	mainCtx       context.Context
 	contextCancel fn.Option[context.CancelFunc]
 
@@ -136,6 +142,17 @@ func WithChannelBalanceCheck() ServiceOption {
 	}
 }
 
+// WithStreamMessageDrop signals that the connected lnd node supports dropping
+// individual messages of server-streaming RPCs in its RPC middleware. This
+// enables account-filtered streaming RPCs like SubscribeInvoices. Without it,
+// those RPCs are not supported for accounts, as an older lnd would ignore the
+// request to drop a message and deliver it to the client anyway.
+func WithStreamMessageDrop() ServiceOption {
+	return func(s *InterceptorService) {
+		s.dropStreamMessages = true
+	}
+}
+
 // NewService returns a service backed by the macaroon Bolt DB stored in the
 // passed-in directory.
 func NewService(store Store, errCallback func(error),
@@ -158,10 +175,17 @@ func NewService(store Store, errCallback func(error),
 	return s, nil
 }
 
-// Start starts the account service and its interceptor capability.
+// Start starts the account service and its interceptor capability. The given
+// options are applied before the service is started, which allows enabling
+// features that depend on the connected lnd node.
 func (s *InterceptorService) Start(ctx context.Context,
 	lightningClient lndclient.LightningClient,
-	routerClient lndclient.RouterClient, params *chaincfg.Params) error {
+	routerClient lndclient.RouterClient, params *chaincfg.Params,
+	opts ...ServiceOption) error {
+
+	for _, opt := range opts {
+		opt(s)
+	}
 
 	mainCtx, contextCancel := context.WithCancel(ctx)
 	s.mainCtx = mainCtx
@@ -169,7 +193,9 @@ func (s *InterceptorService) Start(ctx context.Context,
 
 	s.routerClient = routerClient
 	s.lightningClient = lightningClient
-	s.checkers = NewAccountChecker(s, params, s.maxPaymentSize)
+	s.checkers = NewAccountChecker(
+		s, params, s.maxPaymentSize, s.dropStreamMessages,
+	)
 
 	s.isEnabled = true
 

@@ -1,12 +1,18 @@
 package accounts
 
 import (
+	"context"
 	"fmt"
 	"testing"
+	"time"
 
+	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/fn"
+	"github.com/lightningnetwork/lnd/lnrpc"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/macaroons"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 	"gopkg.in/macaroon-bakery.v2/bakery/checkers"
 	"gopkg.in/macaroon.v2"
 )
@@ -75,4 +81,77 @@ func TestAccountIDCaveatEmbedding(t *testing.T) {
 			})
 		})
 	}
+}
+
+// TestInterceptSubscribeInvoices makes sure that invoice updates sent on a
+// SubscribeInvoices stream are only delivered to the client if the invoice
+// belongs to the account of the macaroon, and are dropped otherwise.
+func TestInterceptSubscribeInvoices(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := NewTestDB(t, clock.NewTestClock(time.Now()))
+	service, err := NewService(store, func(error) {})
+	require.NoError(t, err)
+	require.NoError(t, service.Start(
+		ctx, newMockLnd(), newMockRouter(), chainParams,
+		WithStreamMessageDrop(),
+	))
+	t.Cleanup(func() {
+		_ = service.Stop()
+	})
+
+	acct, err := service.NewAccount(ctx, 1000, testExpiration, "account")
+	require.NoError(t, err)
+
+	ownHash := lntypes.Hash{1, 2, 3}
+	otherHash := lntypes.Hash{4, 5, 6}
+	require.NoError(t, service.AssociateInvoice(ctx, acct.ID, ownHash))
+
+	mac, err := macaroon.New(
+		[]byte("root-key"), []byte("id"), "lnd", macaroon.LatestVersion,
+	)
+	require.NoError(t, err)
+	require.NoError(t, mac.AddFirstPartyCaveat(CaveatFromID(acct.ID).Id))
+	rawMac, err := mac.MarshalBinary()
+	require.NoError(t, err)
+
+	intercept := func(hash lntypes.Hash) *lnrpc.InterceptFeedback {
+		serialized, err := proto.Marshal(&lnrpc.Invoice{
+			RHash: hash[:],
+		})
+		require.NoError(t, err)
+
+		resp, err := service.Intercept(ctx, &lnrpc.RPCMiddlewareRequest{
+			RequestId:   1,
+			MsgId:       2,
+			RawMacaroon: rawMac,
+			InterceptType: &lnrpc.RPCMiddlewareRequest_Response{
+				Response: &lnrpc.RPCMessage{
+					MethodFullUri: "/lnrpc.Lightning/" +
+						"SubscribeInvoices",
+					StreamRpc:  true,
+					TypeName:   "lnrpc.Invoice",
+					Serialized: serialized,
+				},
+			},
+		})
+		require.NoError(t, err)
+		require.EqualValues(t, 2, resp.RefMsgId)
+
+		return resp.GetFeedback()
+	}
+
+	// An update for an invoice of the account is passed through as is.
+	feedback := intercept(ownHash)
+	require.Empty(t, feedback.Error)
+	require.False(t, feedback.DropMessage)
+	require.False(t, feedback.ReplaceResponse)
+
+	// An update for an invoice that doesn't belong to the account is
+	// dropped, without terminating the stream with an error.
+	feedback = intercept(otherHash)
+	require.Empty(t, feedback.Error)
+	require.True(t, feedback.DropMessage)
+	require.False(t, feedback.ReplaceResponse)
 }

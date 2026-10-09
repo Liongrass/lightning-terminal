@@ -172,6 +172,12 @@ func (s *InterceptorService) Intercept(ctx context.Context,
 		replacement, err := s.checkers.replaceOutgoingResponse(
 			ctx, r.Response.MethodFullUri, msg,
 		)
+
+		// The checker filtered out this message of a server-streaming
+		// RPC, so it should not be delivered to the client.
+		if errors.Is(err, mid.ErrDropMessage) {
+			return mid.RPCDrop(req)
+		}
 		if err != nil {
 			return mid.RPCErr(req, err)
 		}

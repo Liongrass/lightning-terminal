@@ -81,9 +81,12 @@ type AccountChecker struct {
 // NewAccountChecker creates a new account checker that can keep track of all
 // account related requests, including invoices, payments and account balances.
 // If maxPaymentSize is greater than zero, payments whose amount exceeds it are
-// rejected.
+// rejected. If dropStreamMessages is true, lnd supports dropping individual
+// messages of server-streaming RPCs, which is required to support filtered
+// streams like SubscribeInvoices.
 func NewAccountChecker(service Service, chainParams *chaincfg.Params,
-	maxPaymentSize lnwire.MilliSatoshi) *AccountChecker {
+	maxPaymentSize lnwire.MilliSatoshi,
+	dropStreamMessages bool) *AccountChecker {
 
 	// nolint:ll
 	checkers := CheckerMap{
@@ -324,6 +327,26 @@ func NewAccountChecker(service Service, chainParams *chaincfg.Params,
 		"/lnrpc.Lightning/GetNodeInfo": GetNodeInfoPassThrough,
 	}
 
+	// Filtering the invoice stream requires dropping the updates of
+	// invoices that don't belong to the account. An lnd node that doesn't
+	// support this would ignore the request to drop a message and leak the
+	// invoices of other accounts, so we only support the RPC if it does.
+	if dropStreamMessages {
+		checkers["/lnrpc.Lightning/SubscribeInvoices"] =
+			mid.NewResponseRewriter(
+				&lnrpc.InvoiceSubscription{},
+				&lnrpc.Invoice{},
+				func(ctx context.Context,
+					t *lnrpc.Invoice) (proto.Message,
+					error) {
+
+					return nil, checkSubscribedInvoice(
+						ctx, t,
+					)
+				}, mid.PassThroughErrorHandler,
+			)
+	}
+
 	return &AccountChecker{
 		checkers: checkers,
 	}
@@ -409,6 +432,33 @@ func (a *AccountChecker) replaceOutgoingResponse(ctx context.Context,
 	}
 
 	return checker.HandleResponse(ctx, resp)
+}
+
+// checkSubscribedInvoice checks whether an invoice update sent on an invoice
+// subscription stream belongs to the account in the context. If it doesn't,
+// mid.ErrDropMessage is returned so the update is not delivered to the client.
+//
+// NOTE: An invoice is only associated with the account once the response to
+// the AddInvoice call that created it has been intercepted. lnd might send the
+// update for the newly added invoice on the stream before that happens, in
+// which case that first update is dropped. Any later update of the invoice,
+// for example once it is settled, is delivered as expected.
+func checkSubscribedInvoice(ctx context.Context, invoice *lnrpc.Invoice) error {
+	acct, err := AccountFromContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	hash, err := lntypes.MakeHash(invoice.RHash)
+	if err != nil {
+		return fmt.Errorf("error parsing invoice hash: %w", err)
+	}
+
+	if _, ok := acct.Invoices[hash]; !ok {
+		return mid.ErrDropMessage
+	}
+
+	return nil
 }
 
 // filterInvoices filters the total response of all invoices returned by lnd and

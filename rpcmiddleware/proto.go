@@ -113,6 +113,22 @@ func RPCReplacement(req *lnrpc.RPCMiddlewareRequest,
 	}, nil
 }
 
+// RPCDrop constructs a new middleware response that will indicate that the
+// intercepted message should not be delivered to the client. This is only
+// allowed for response messages of server-streaming RPCs.
+func RPCDrop(req *lnrpc.RPCMiddlewareRequest) (*lnrpc.RPCMiddlewareResponse,
+	error) {
+
+	return &lnrpc.RPCMiddlewareResponse{
+		RefMsgId: req.MsgId,
+		MiddlewareMessage: &lnrpc.RPCMiddlewareResponse_Feedback{
+			Feedback: &lnrpc.InterceptFeedback{
+				DropMessage: true,
+			},
+		},
+	}, nil
+}
+
 // RPCErrReplacement constructs a new rpc middleware response that will indicate
 // that an error should be replaced by a different one
 func RPCErrReplacement(req *lnrpc.RPCMiddlewareRequest,

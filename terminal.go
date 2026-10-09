@@ -164,6 +164,16 @@ var (
 		},
 	}
 
+	// streamMessageDropVersion is the minimal lnd version that supports
+	// dropping individual messages of server-streaming RPCs in the RPC
+	// middleware. This is required to filter streaming RPCs like
+	// SubscribeInvoices for accounts.
+	streamMessageDropVersion = &verrpc.Version{
+		AppMajor: 0,
+		AppMinor: 22,
+		AppPatch: 0,
+	}
+
 	// walletUnlockerServiceMethods defines methods of the wallet unlocker
 	// service that we don't require macaroons to access. We also allow
 	// these methods to be called even if lnd is not yet fully marked as
@@ -1238,9 +1248,19 @@ func (g *LightningTerminal) startInternalSubServers(ctx context.Context,
 
 	log.Infof("Starting LiT account service")
 	if !g.cfg.Accounts.Disable {
+		var startOpts []accounts.ServiceOption
+		err = lndclient.AssertVersionCompatible(
+			g.lndClient.Version, streamMessageDropVersion,
+		)
+		if err == nil {
+			startOpts = append(
+				startOpts, accounts.WithStreamMessageDrop(),
+			)
+		}
+
 		err = g.accountService.Start(
 			ctx, g.lndClient.Client, g.lndClient.Router,
-			g.lndClient.ChainParams,
+			g.lndClient.ChainParams, startOpts...,
 		)
 		if err != nil {
 			log.Errorf("error starting account service: %v, "+

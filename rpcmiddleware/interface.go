@@ -2,6 +2,7 @@ package rpcmiddleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 
@@ -14,6 +15,12 @@ var (
 	// ErrNotSupported is returned if a specific method is called that is
 	// not supported by the RPC middleware interceptor checker.
 	ErrNotSupported = fmt.Errorf("method not supported")
+
+	// ErrDropMessage can be returned by a response handler of a
+	// server-streaming RPC to signal that the response message should not
+	// be delivered to the client. The stream itself stays open. This
+	// requires lnd to support dropping messages in its RPC middleware.
+	ErrDropMessage = errors.New("drop message")
 
 	// errorType is the reflection type of the error interface.
 	errorType = reflect.TypeOf((*error)(nil)).Elem()

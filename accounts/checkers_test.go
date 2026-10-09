@@ -144,10 +144,31 @@ var _ Service = (*mockService)(nil)
 func TestAccountChecker(t *testing.T) {
 	t.Parallel()
 
-	checker := NewAccountChecker(nil, nil, 0)
+	checker := NewAccountChecker(nil, nil, 0, true)
 	for checkerName := range checker.checkers {
 		t.Logf("Checker registered: %v", checkerName)
 	}
+}
+
+// TestSubscribeInvoicesRequiresStreamMessageDrop makes sure SubscribeInvoices
+// isn't supported for accounts if lnd can't drop individual stream messages, as
+// the invoices of other accounts would otherwise be leaked.
+func TestSubscribeInvoicesRequiresStreamMessageDrop(t *testing.T) {
+	t.Parallel()
+
+	acct := &OffChainBalanceAccount{
+		ID:       testID,
+		Invoices: make(AccountInvoices),
+		Payments: make(AccountPayments),
+	}
+	ctx := AddAccountToContext(context.Background(), acct)
+
+	checker := NewAccountChecker(newMockService(), chainParams, 0, false)
+	err := checker.checkIncomingRequest(
+		ctx, "/lnrpc.Lightning/SubscribeInvoices",
+		&lnrpc.InvoiceSubscription{},
+	)
+	require.ErrorIs(t, err, ErrNotSupportedWithAccounts)
 }
 
 // TestAccountCheckers tests the account request checkers.
@@ -222,6 +243,24 @@ func TestAccountCheckers(t *testing.T) {
 			Invoices: []*lnrpc.Invoice{{
 				RHash: testHash[:],
 			}},
+		},
+	}, {
+		name:            "subscribe invoices, not mapped to account",
+		fullURI:         "/lnrpc.Lightning/SubscribeInvoices",
+		originalRequest: &lnrpc.InvoiceSubscription{},
+		originalResponse: &lnrpc.Invoice{
+			RHash: testHash[:],
+		},
+		responseErr: "drop message",
+	}, {
+		name:    "subscribe invoices, mapped to account",
+		fullURI: "/lnrpc.Lightning/SubscribeInvoices",
+		setup: func(s *mockService, acct *OffChainBalanceAccount) {
+			acct.Invoices[testHash] = struct{}{}
+		},
+		originalRequest: &lnrpc.InvoiceSubscription{},
+		originalResponse: &lnrpc.Invoice{
+			RHash: testHash[:],
 		},
 	}, {
 		name:    "lookup invoice, not mapped to account",
@@ -442,7 +481,9 @@ func TestAccountCheckers(t *testing.T) {
 			tt.Parallel()
 
 			service := newMockService()
-			checkers := NewAccountChecker(service, chainParams, 0)
+			checkers := NewAccountChecker(
+				service, chainParams, 0, true,
+			)
 			acct := &OffChainBalanceAccount{
 				ID:       testID,
 				Type:     TypeInitialBalance,
